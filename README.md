@@ -36,7 +36,7 @@ cpu利用率:运行vfl_ray/cpu_monitor.py
 
 等待时间：运行训练文件后/vfl_ray/server_a_times.txt里面有ServerA sync took 
 我认为等待时间 = ServerA sync took time /all time（因为其他时间都在计算）
-同步的等待时间没想到好的计算方法
+这个可能得需要手动计算一下了
 
 其他数据集代码还在添加
 

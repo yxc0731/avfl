@@ -59,6 +59,8 @@ def train_federated(num_epochs: int,
     workers_b = {}
     worker_batches = {}
 
+    wait_time_top_model = 0.0
+    params_server_wait_time_all =0.0
     for worker_id in range(num_workers):
         workers_a[worker_id] = Worker.remote('a', worker_id,
                                              input_dim=train_data_a.shape[1],
@@ -121,6 +123,8 @@ def train_federated(num_epochs: int,
             for worker in active_workers:
                 worker_id = worker['worker_id']
                 emb_a, emb_b = ray.get([worker['emb_a_future'], worker['emb_b_future']])
+
+                wait_time_start = time.perf_counter()
                 combined_emb = np.concatenate([emb_a, emb_b], axis=1)
                 embeddings_dict[worker_id] = combined_emb
 
@@ -134,6 +138,10 @@ def train_federated(num_epochs: int,
                 total_loss += loss
                 batch_count += 1
 
+            wait_time_end = time.perf_counter()
+            wait_time = wait_time_end - wait_time_start
+            wait_time_top_model += wait_time
+            print("wait_time_top_model", wait_time_top_model)
             # 并行反向传播
             backward_futures = []
             for worker in active_workers:
@@ -162,7 +170,7 @@ def train_federated(num_epochs: int,
 
         if epoch > 0 and (epoch+1) % global_update_frequency == 0:
             print(f"\nEpoch {epoch+1}: Performing global model update...")
-
+            params_server_wait_time_start = time.perf_counter()
             params_a_futures = {
                 worker_id: worker.get_parameters.remote()
                 for worker_id, worker in workers_a.items()
@@ -193,19 +201,25 @@ def train_federated(num_epochs: int,
                 update_futures.append(worker.set_parameters.remote(avg_params_b))
             ray.get(update_futures)
 
+            params_server_wait_time_end = time.perf_counter()
+            params_server_wait_time = params_server_wait_time_end - params_server_wait_time_start
+            params_server_wait_time_all += params_server_wait_time
         # if epoch % global_update_frequency == 0:
             emb_a = ray.get(workers_a[0].forward_step.remote(test_data_a))
             emb_b = ray.get(workers_b[0].forward_step.remote(test_data_b))
             test_embeddings = np.concatenate([emb_a, emb_b], axis=1)
 
             predictions = ray.get(server.evaluate.remote(test_embeddings, test_labels))
-
+            total_wait_time = wait_time_top_model +params_server_wait_time_all
             metrics = {
                 'epoch': epoch+1,
                 'accuracy': accuracy_score(test_labels, predictions),
                 'precision': precision_score(test_labels, predictions, zero_division=1),
                 'recall': recall_score(test_labels, predictions, zero_division=1),
-                'f1': f1_score(test_labels, predictions, zero_division=1)
+                'f1': f1_score(test_labels, predictions, zero_division=1),
+                'wait_time_top_model': wait_time_top_model,
+                'params_server_wait_time':params_server_wait_time_all,
+                'total_wait_time': total_wait_time,
             }
 
             #print(f"Epoch {epoch}:")
@@ -213,7 +227,13 @@ def train_federated(num_epochs: int,
             print(f"Test Metrics: Accuracy: {metrics['accuracy']:.4f}, "
                   f"Precision: {metrics['precision']:.4f}, "
                   f"Recall: {metrics['recall']:.4f}, "
-                  f"F1: {metrics['f1']:.4f}")
+                  f"F1: {metrics['f1']:.4f}",
+                  # f"wait_time_top_model: {metrics['wait_time_top_model']:.4f}",
+                  # f"params_server_wait_time: {metrics['params_server_wait_time']:.4f}",
+                  # f"total_wait_time: {metrics['total_wait_time']:.4f}",
+                  )
+
+            total_wait_time = wait_time+params_server_wait_time
 
             if metrics['accuracy'] >= predefined_accuracy:
                 print(f"\nReached target accuracy of {predefined_accuracy} after {epoch+1} epochs")
@@ -300,7 +320,9 @@ if __name__ == "__main__":
     print(f"Precision: {best_metrics['precision']:.4f}")
     print(f"Recall: {best_metrics['recall']:.4f}")
     print(f"F1 Score: {best_metrics['f1']:.4f}")
-
+    print(f"wait_time_top_model: {best_metrics['wait_time_top_model']:.4f}")
+    print(f"params_server_wait_time: {best_metrics['params_server_wait_time']:.4f}")
+    print(f"total_wait_time: {best_metrics['total_wait_time']:.4f}")
 
     n_train_samples = train_x_a.shape[0]
     n_test_samples = test_x_a.shape[0]
@@ -311,3 +333,14 @@ if __name__ == "__main__":
 
     # 输出通信开销（单位：MB）
     print(f"通信开销: {communication_overhead_mb:.2f} MB")
+
+    # top_model造成的等待时间比例
+    wait_time_top_model = best_metrics['wait_time_top_model'] / training_time
+    print("top_model造成的等待时间比例",wait_time_top_model)
+    #参数服务器造成的等待时间比例
+    params_server_wait_time = best_metrics['params_server_wait_time'] / training_time
+    print("参数服务器造成的等待时间比例", params_server_wait_time)
+    #总等待时间比例
+    total_wait_time = best_metrics['total_wait_time'] / training_time
+    print("总等待时间比例", total_wait_time)
+
