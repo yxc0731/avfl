@@ -1,2 +1,2 @@
-ServerA sync took 2.5318357944488525 seconds
-ServerA process batch took 696875.10983634 seconds
+ServerA sync took 0.8339986801147461 seconds
+ServerA process batch took 81115.9197409153 seconds

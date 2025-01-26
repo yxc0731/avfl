@@ -1,1 +1,1 @@
-send_embedding_time: 0.14500975608825684, receive_embedding_time: 11052.71141076088, receive_embedding_wait_time: 4311.583362817764, send_gradient_time: 0.39685821533203125, receive_gradient_time: 167758.68242311478
+send_embedding_time: 0.0335698127746582, receive_embedding_time: 3934.2708842754364, receive_embedding_wait_time: 3934.2433564662933, send_gradient_time: 0.035717010498046875, receive_gradient_time: 2756.866266965866

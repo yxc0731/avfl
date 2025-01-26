@@ -201,6 +201,7 @@ def train_federated(num_epochs: int,
             predictions = ray.get(server.evaluate.remote(test_embeddings, test_labels))
 
             metrics = {
+                'epoch': epoch+1,
                 'accuracy': accuracy_score(test_labels, predictions),
                 'precision': precision_score(test_labels, predictions, zero_division=1),
                 'recall': recall_score(test_labels, predictions, zero_division=1),
@@ -215,7 +216,7 @@ def train_federated(num_epochs: int,
                   f"F1: {metrics['f1']:.4f}")
 
             if metrics['accuracy'] >= predefined_accuracy:
-                print(f"\nReached target accuracy of {predefined_accuracy} after {epoch} epochs")
+                print(f"\nReached target accuracy of {predefined_accuracy} after {epoch+1} epochs")
                 best_metrics = metrics
                 break
 
@@ -299,3 +300,14 @@ if __name__ == "__main__":
     print(f"Precision: {best_metrics['precision']:.4f}")
     print(f"Recall: {best_metrics['recall']:.4f}")
     print(f"F1 Score: {best_metrics['f1']:.4f}")
+
+
+    n_train_samples = train_x_a.shape[0]
+    n_test_samples = test_x_a.shape[0]
+    communication_overhead_bytes = ((n_train_samples * 64) + (n_test_samples * 32)) * 4 * best_metrics['epoch']
+
+    # 转换为MB
+    communication_overhead_mb = communication_overhead_bytes / (1024 * 1024)
+
+    # 输出通信开销（单位：MB）
+    print(f"通信开销: {communication_overhead_mb:.2f} MB")

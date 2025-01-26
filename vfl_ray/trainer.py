@@ -14,7 +14,7 @@ import asyncio
 from collections import defaultdict
 import os
 os.environ["CUDA_VISIBLE_DEVICES"] = "1,2,4,6,7"
-from cpu_config import WORKER_NUM,BATCH_SIZE,GLOBAL_UPDATE_FREQUENCY,PREDEFINED_ACCURACY,TOTAL_CPUS
+from cpu_config import WORKER_NUM,BATCH_SIZE,GLOBAL_UPDATE_FREQUENCY,PREDEFINED_ACCURACY,TOTAL_CPUS,NOISE_MULTIPLIER
 import random
 
 # 设置随机种子
@@ -49,7 +49,8 @@ async def train_federated(
         global_update_frequency: int = 10,
         patience: int = 5,
         predefined_accuracy = 0.97,
-        num_cpus = 64
+        num_cpus = 64,
+        noise_multiplier = 0.1
 ):
     ray.init(num_cpus=num_cpus)
     base_exp = global_update_frequency
@@ -61,7 +62,7 @@ async def train_federated(
     embedding_dim = 32
 
     # 创建channel和servers
-    channel = Channel.remote()
+    channel = Channel.remote(noise_multiplier=noise_multiplier)
     server_a = ServerA.remote(num_workers, input_dim_a, embedding_dim, channel)
     server_b = ServerB.remote(num_workers, input_dim_b, embedding_dim, channel)
 
@@ -79,6 +80,7 @@ async def train_federated(
         })
 
     best_metrics = {
+        'epoch': 0,
         'accuracy': 0,
         'precision': 0,
         'recall': 0,
@@ -154,6 +156,7 @@ async def train_federated(
 
             if result is not None and 'predictions' in result:
                 metrics = {
+                    'epoch': epoch+1,
                     'accuracy': accuracy_score(test_labels, result['predictions']),
                     'precision': precision_score(test_labels, result['predictions'],average='macro', zero_division=1),
                     'recall': recall_score(test_labels, result['predictions'], average='macro',zero_division=1),
@@ -168,7 +171,7 @@ async def train_federated(
                       f"Eval time: {calc_metric_time:.4f}, "
                       f"Sync freq: {global_update_frequency}")
                 if metrics['accuracy'] >= predefined_accuracy:
-                    print(f"\nReached target accuracy of {predefined_accuracy} after {epoch} epochs")
+                    print(f"\nReached target accuracy of {predefined_accuracy} after {epoch+1} epochs")
                     best_metrics = metrics
                     break
 
@@ -228,6 +231,12 @@ if __name__ == "__main__":
     test_x_b = test_x_b.numpy()
     test_y = test_y.numpy()
 
+    #Nm是每个worker平均分配数量
+    #N是整体数量，k是batch数量
+    N = train_x_a.shape[0]
+    Nm = train_x_a.shape[0]/ WORKER_NUM
+    k = train_x_a.shape[0]/ BATCH_SIZE
+    noise_multiplier = (Nm * (k ** 0.5)) / (NOISE_MULTIPLIER * N)
 
     start_time = time.time()
     best_metrics = asyncio.run(train_federated(
@@ -242,7 +251,8 @@ if __name__ == "__main__":
         batch_size=BATCH_SIZE,
         global_update_frequency=GLOBAL_UPDATE_FREQUENCY,
         predefined_accuracy = PREDEFINED_ACCURACY,
-        num_cpus = TOTAL_CPUS
+        num_cpus = TOTAL_CPUS,
+        noise_multiplier = noise_multiplier,
     ))
 
     end_time = time.time()
@@ -254,3 +264,12 @@ if __name__ == "__main__":
     print(f"Precision: {best_metrics['precision']:.4f}")
     print(f"Recall: {best_metrics['recall']:.4f}")
     print(f"F1 Score: {best_metrics['f1']:.4f}")
+    n_train_samples = train_x_a.shape[0]
+    n_test_samples = test_x_a.shape[0]
+    communication_overhead_bytes = ((n_train_samples * 64) + (n_test_samples * 32)) * 4 * best_metrics['epoch']
+
+    # 转换为MB
+    communication_overhead_mb = communication_overhead_bytes / (1024 * 1024)
+
+    # 输出通信开销（单位：MB）
+    print(f"通信开销: {communication_overhead_mb:.2f} MB")
