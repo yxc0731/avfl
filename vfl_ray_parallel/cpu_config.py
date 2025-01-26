@@ -1,6 +1,6 @@
 import math
 
-PREDEFINED_ACCURACY = 0.7    #规定精度
+PREDEFINED_ACCURACY = 0.91    #规定精度
 GLOBAL_UPDATE_FREQUENCY = 5   #同步轮次
 BATCH_SIZE = 32
 # 基础配置

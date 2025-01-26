@@ -141,7 +141,7 @@ def train_federated(num_epochs: int,
             wait_time_end = time.perf_counter()
             wait_time = wait_time_end - wait_time_start
             wait_time_top_model += wait_time
-            print("wait_time_top_model", wait_time_top_model)
+            # print("wait_time_top_model", wait_time_top_model)
             # 并行反向传播
             backward_futures = []
             for worker in active_workers:
